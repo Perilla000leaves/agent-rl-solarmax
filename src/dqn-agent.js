@@ -13,10 +13,12 @@ export class DqnAgent {
     this.replayCapacity = options.replayCapacity ?? 5000;
     this.minReplaySize = options.minReplaySize ?? 128;
     this.targetUpdateEvery = options.targetUpdateEvery ?? 200;
+    this.maxTargetValue = options.maxTargetValue ?? 75;
     this.rng = options.rng ?? Math.random;
     this.online = new TinyQNetwork(this.inputSize, this.hiddenSize, this.actionCount, this.rng);
     this.target = this.online.clone();
     this.replay = new ReplayBuffer(this.replayCapacity, this.rng);
+    this.demoSamples = [];
     this.trainSteps = 0;
   }
 
@@ -51,15 +53,24 @@ export class DqnAgent {
       return null;
     }
 
-    const batch = this.replay.sample(this.batchSize);
     let totalLoss = 0;
+    let updateCount = 0;
 
+    // DQfD 风格：一半批量做模仿学习，保持示范策略不被 TD 更新扰动。
+    const demoQuota = Math.min(this.demoSamples.length, Math.floor(this.batchSize / 2));
+    for (let i = 0; i < demoQuota; i += 1) {
+      const sample = this.demoSamples[Math.floor(this.rng() * this.demoSamples.length)];
+      totalLoss += this.online.trainClassification(sample.state, sample.action, sample.mask, this.learningRate);
+      updateCount += 1;
+    }
+
+    const batch = this.replay.sample(this.batchSize - demoQuota);
     for (const transition of batch) {
       const nextQValues = this.target.predict(transition.nextState);
       const nextBest = transition.done ? 0 : maskedMax(nextQValues, transition.nextActionMask);
-      const targetValue = transition.reward + this.gamma * nextBest;
-      const loss = this.online.trainOne(transition.state, transition.action, targetValue, this.learningRate);
-      totalLoss += loss;
+      const targetValue = clampTarget(transition.reward + this.gamma * nextBest, this.maxTargetValue);
+      totalLoss += this.online.trainOne(transition.state, transition.action, targetValue, this.learningRate);
+      updateCount += 1;
     }
 
     this.trainSteps += 1;
@@ -67,7 +78,28 @@ export class DqnAgent {
       this.updateTarget();
     }
 
-    return totalLoss / batch.length;
+    return totalLoss / Math.max(1, updateCount);
+  }
+
+  imitateStep(state, action, actionMask) {
+    if (state.length !== this.inputSize) {
+      throw new Error(`Unexpected imitation state size ${state.length}; expected ${this.inputSize}`);
+    }
+    if (!Number.isInteger(action) || action < 0 || action >= this.actionCount || actionMask[action] !== 1) {
+      return null;
+    }
+    return this.online.trainClassification(state, action, actionMask, this.learningRate);
+  }
+
+  addDemo(state, action, actionMask) {
+    if (state.length !== this.inputSize) {
+      throw new Error(`Unexpected demo state size ${state.length}; expected ${this.inputSize}`);
+    }
+    if (!Number.isInteger(action) || action < 0 || action >= this.actionCount || actionMask[action] !== 1) {
+      return false;
+    }
+    this.demoSamples.push({ state, action, mask: actionMask.slice() });
+    return true;
   }
 
   updateTarget() {
@@ -84,6 +116,7 @@ export class DqnAgent {
         hiddenSize: this.hiddenSize,
         actionCount: this.actionCount,
         gamma: this.gamma,
+        maxTargetValue: this.maxTargetValue,
         learningRate: this.learningRate,
         batchSize: this.batchSize,
         replayCapacity: this.replayCapacity,
@@ -143,6 +176,13 @@ export function maskedArgMax(values, actionMask) {
 export function maskedMax(values, actionMask) {
   const action = maskedArgMax(values, actionMask);
   return action === null ? 0 : values[action];
+}
+
+function clampTarget(value, limit) {
+  if (!Number.isFinite(limit)) {
+    return value;
+  }
+  return Math.max(-limit, Math.min(limit, value));
 }
 
 export class ReplayBuffer {
@@ -229,6 +269,81 @@ class TinyQNetwork {
     }
 
     return 0.5 * error * error;
+  }
+
+  // 模仿学习：在合法动作上做带掩码的 softmax 交叉熵，把 expert 动作的概率推高。
+  trainClassification(input, expertAction, actionMask, learningRate) {
+    const hidden = this.hiddenActivations(input);
+    const logits = Array(this.outputSize).fill(0);
+    let maxLogit = -Infinity;
+    for (let action = 0; action < this.outputSize; action += 1) {
+      let value = this.b2[action];
+      const weights = this.w2[action];
+      for (let j = 0; j < this.hiddenSize; j += 1) {
+        value += weights[j] * hidden[j];
+      }
+      logits[action] = value;
+      if (actionMask[action] === 1 && value > maxLogit) {
+        maxLogit = value;
+      }
+    }
+    if (!Number.isFinite(maxLogit)) {
+      return 0;
+    }
+
+    let expSum = 0;
+    const expValues = Array(this.outputSize).fill(0);
+    for (let action = 0; action < this.outputSize; action += 1) {
+      if (actionMask[action] !== 1) {
+        continue;
+      }
+      expValues[action] = Math.exp(logits[action] - maxLogit);
+      expSum += expValues[action];
+    }
+    if (expSum <= 0) {
+      return 0;
+    }
+
+    const gradients = Array(this.outputSize).fill(0);
+    const gradHidden = Array(this.hiddenSize).fill(0);
+    for (let action = 0; action < this.outputSize; action += 1) {
+      if (actionMask[action] !== 1) {
+        continue;
+      }
+      const probability = expValues[action] / expSum;
+      const gradient = probability - (action === expertAction ? 1 : 0);
+      gradients[action] = gradient;
+      const weights = this.w2[action];
+      for (let j = 0; j < this.hiddenSize; j += 1) {
+        gradHidden[j] += gradient * weights[j];
+      }
+    }
+
+    for (let action = 0; action < this.outputSize; action += 1) {
+      const gradient = gradients[action];
+      if (gradient === 0) {
+        continue;
+      }
+      const weights = this.w2[action];
+      for (let j = 0; j < this.hiddenSize; j += 1) {
+        weights[j] -= learningRate * gradient * hidden[j];
+      }
+      this.b2[action] -= learningRate * gradient;
+    }
+
+    for (let j = 0; j < this.hiddenSize; j += 1) {
+      if (hidden[j] <= 0 || gradHidden[j] === 0) {
+        continue;
+      }
+      const row = this.w1[j];
+      for (let i = 0; i < this.inputSize; i += 1) {
+        row[i] -= learningRate * gradHidden[j] * input[i];
+      }
+      this.b1[j] -= learningRate * gradHidden[j];
+    }
+
+    const expertExp = expValues[expertAction] || Number.EPSILON;
+    return -Math.log(expertExp / expSum);
   }
 
   hiddenActivations(input) {

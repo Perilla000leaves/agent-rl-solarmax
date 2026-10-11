@@ -84,6 +84,23 @@ test("DQN checkpoint round-trips and can select a legal action", () => {
   assert.ok(action === null || observation.actionMask[action] === 1);
 });
 
+test("DQN agent can learn to imitate an expert action", () => {
+  const rng = fixedRng();
+  const env = new SolarMaxEnv({ seed: 8, maxEpisodeSteps: 30 });
+  const observation = env.reset(8);
+  const agent = new DqnAgent({ rng, hiddenSize: 32, learningRate: 0.005 });
+  const state = flattenObservation(observation);
+  const expertAction = observation.actionMask.indexOf(1);
+  assert.ok(expertAction >= 0);
+
+  for (let i = 0; i < 80; i += 1) {
+    agent.imitateStep(state, expertAction, observation.actionMask);
+  }
+
+  const qValues = agent.online.predict(state);
+  assert.equal(maskedArgMax(qValues, observation.actionMask), expertAction);
+});
+
 function fixedRng() {
   let seed = 99;
   return function next() {

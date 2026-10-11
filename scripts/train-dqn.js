@@ -14,6 +14,7 @@ const epsilonStart = Number.parseFloat(process.argv[9] ?? "1");
 const epsilonMin = Number.parseFloat(process.argv[10] ?? "0.08");
 const epsilonDecay = Number.parseFloat(process.argv[11] ?? "0.94");
 const learningRate = Number.parseFloat(process.argv[12] ?? "0.0015");
+const gamma = Number.parseFloat(process.argv[13] ?? "0.96");
 const rng = mulberry32(2026 + baseSeed);
 const env = new SolarMaxEnv({ seed: baseSeed, maxEpisodeSteps, difficulty, opponent });
 const agent = loadOrCreateAgent();
@@ -37,7 +38,8 @@ console.log(
     `epsilonStart=${epsilonStart}`,
     `epsilonMin=${epsilonMin}`,
     `epsilonDecay=${epsilonDecay}`,
-    `learningRate=${learningRate}`
+    `learningRate=${learningRate}`,
+    `gamma=${gamma}`
   ].join(" ")
 );
 
@@ -152,7 +154,7 @@ function loadOrCreateAgent() {
     const checkpoint = JSON.parse(readFileSync(resumePath, "utf8"));
     return DqnAgent.fromJSON(checkpoint, {
       rng,
-      hyperparameters: { learningRate }
+      hyperparameters: { learningRate, gamma }
     });
   }
 
@@ -168,7 +170,7 @@ function loadOrCreateAgent() {
     batchSize: 32,
     targetUpdateEvery: 100,
     learningRate,
-    gamma: 0.96
+    gamma
   });
 }
 
