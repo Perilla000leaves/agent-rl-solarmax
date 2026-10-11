@@ -1,0 +1,12 @@
+{
+  "name": "agent-rl-solarmax",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "baseline": "node scripts/random-baseline.js",
+    "eval:dqn": "node scripts/evaluate-dqn.js",
+    "train:dqn": "node scripts/train-dqn.js",
+    "test": "node --test"
+  }
+}

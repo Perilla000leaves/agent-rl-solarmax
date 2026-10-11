@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SolarMax RL Playground</title>
+    <link rel="stylesheet" href="./src/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="game-panel" aria-label="SolarMax 风格游戏">
+        <div class="topbar">
+          <div>
+            <h1>SolarMax RL Playground</h1>
+            <p id="statusText">从蓝色星球拖到目标星球，释放后派出一半舰队。</p>
+          </div>
+          <div class="controls">
+            <button id="demoButton" type="button">DQN 演示</button>
+            <button id="pauseButton" type="button">暂停</button>
+            <button id="restartButton" type="button">重新开始</button>
+          </div>
+        </div>
+        <canvas id="gameCanvas" width="1100" height="700"></canvas>
+      </section>
+      <aside class="side-panel" aria-label="游戏信息">
+        <div class="metric">
+          <span>玩家星球</span>
+          <strong id="playerPlanets">0</strong>
+        </div>
+        <div class="metric">
+          <span>敌方星球</span>
+          <strong id="enemyPlanets">0</strong>
+        </div>
+        <div class="metric">
+          <span>中立星球</span>
+          <strong id="neutralPlanets">0</strong>
+        </div>
+        <div class="demo-panel" aria-label="强化学习演示信息">
+          <h2>RL 演示</h2>
+          <dl>
+            <div>
+              <dt>模式</dt>
+              <dd id="demoMode">手动游玩</dd>
+            </div>
+            <div>
+              <dt>模型</dt>
+              <dd id="demoModel">未加载</dd>
+            </div>
+            <div>
+              <dt>Step</dt>
+              <dd id="demoStep">0</dd>
+            </div>
+            <div>
+              <dt>Done/Winner</dt>
+              <dd id="demoDone">false / none</dd>
+            </div>
+            <div>
+              <dt>累计奖励</dt>
+              <dd id="demoReward">0.00</dd>
+            </div>
+            <div>
+              <dt>最近动作</dt>
+              <dd id="demoAction">-</dd>
+            </div>
+            <div>
+              <dt>Reward</dt>
+              <dd id="demoRewardBreakdown">-</dd>
+            </div>
+            <div>
+              <dt>State</dt>
+              <dd id="demoState">-</dd>
+            </div>
+          </dl>
+          <ol id="demoLog" class="demo-log" aria-label="最近强化学习步骤"></ol>
+        </div>
+        <div class="help">
+          <h2>玩法</h2>
+          <p>蓝色是你，红色是对手，灰色是中立。己方星球会持续增长兵力。</p>
+          <p>从己方星球按住并拖到任意目标星球，释放后派出当前兵力的一半。也可以点击己方星球，再点击目标派兵。</p>
+          <p>点击 DQN 演示可观看未充分训练的 demo policy 自动选择合法动作；输很正常，它用于观察 RL 的状态、动作、奖励流。</p>
+          <p>敌方会定期从强星球进攻弱目标。消灭对手所有星球和舰队即可获胜。</p>
+        </div>
+      </aside>
+    </main>
+    <script type="module" src="./src/ui.js"></script>
+  </body>
+</html>

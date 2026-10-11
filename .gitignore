@@ -1,0 +1,12 @@
+# Dependencies
+node_modules/
+
+# Editor / IDE local metadata
+.qoder/
+
+# Python
+__pycache__/
+
+# OS
+.DS_Store
+Thumbs.db
